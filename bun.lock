@@ -1,9 +1,9 @@
 {
-  "lockfileVersion": 2,
+  "lockfileVersion": 1,
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "fuller",
+      "name": "fuller-js",
       "dependencies": {
         "react": "^19.2.8",
         "react-dom": "^19.2.8",
