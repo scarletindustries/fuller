@@ -1,0 +1,12 @@
+{
+  "name": "fuller-js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bundle": "bun build js/entry.js --format=cjs --target=browser --define process.env.NODE_ENV='\"production\"' --banner '(function () { var module = { exports: {} }; var exports = module.exports;' --footer 'return module.exports; })();' --outfile=js/out/fuller_react_dom_server.cjs"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}

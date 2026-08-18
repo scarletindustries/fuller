@@ -1,0 +1,14 @@
+name = "fuller"
+version = "0.1.0"
+target = "erlang"
+description = "React server rendering from Gleam: react-dom/server compiled to Erlang by Arc's AOT compiler"
+licences = ["Apache-2.0"]
+repository = { type = "github", user = "scarletindustries", repo = "fuller" }
+
+[dependencies]
+gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+arc = { git = "https://github.com/alii/arc", ref = "02f37db4443e54a0ea67373cac98858cc81e716d" }
+carder = { git = "https://github.com/scarletindustries/carder", ref = "ca536730bb66a83ad00fbffdbae06f4d5daad13d" }
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
