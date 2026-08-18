@@ -1,0 +1,78 @@
+name: rebuild react
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: bump react and react-dom before rebuilding
+        type: boolean
+        default: true
+  push:
+    branches:
+      - master
+    paths:
+      - 'js/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'gleam.toml'
+  pull_request:
+    paths:
+      - 'js/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'gleam.toml'
+      - 'src/fuller_react_dom_server.erl'
+
+concurrency:
+  group: rebuild-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '29'
+          gleam-version: '1.17'
+          rebar3-version: '3'
+      - uses: oven-sh/setup-bun@v2
+
+      - name: check out arc at the ref gleam.toml pins
+        run: |
+          ref=$(grep -E '^arc = ' gleam.toml | grep -oE '[0-9a-f]{40}')
+          git clone -q https://github.com/alii/arc "$RUNNER_TEMP/arc"
+          git -C "$RUNNER_TEMP/arc" checkout -q "$ref"
+
+      - name: bump react
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bump)
+        run: bun update react react-dom
+
+      - run: ARC_DIR="$RUNNER_TEMP/arc" scripts/build.sh
+
+      - run: gleam build
+      - run: gleam test
+
+      - name: fail if the generated module is stale
+        if: github.event_name == 'pull_request'
+        run: git diff --exit-code --stat src/fuller_react_dom_server.erl bun.lock package.json
+
+      - name: commit
+        if: github.event_name != 'pull_request'
+        run: |
+          git add src/fuller_react_dom_server.erl bun.lock package.json
+          git diff --cached --quiet && exit 0
+          version=$(grep -oE '"version": "[^"]+"' node_modules/react/package.json | grep -oE '[0-9][^"]*')
+          if git diff --cached --quiet -- bun.lock package.json; then msg="rebuild react"; else msg="react $version"; fi
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git commit -q -m "$msg"
+          git push
