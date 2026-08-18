@@ -8,6 +8,9 @@ React server rendering from Gleam. `react-dom/server` is compiled to Erlang by [
 
 ---
 
+> [!WARNING]
+> Fuller is very experimental! It is extremely big and extremely slow. Fuller gets better when changes to Carder and Arc are made that improve the Erlang they emit.
+
 ```gleam
 import fuller
 import fuller/attribute
