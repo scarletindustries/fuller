@@ -2,14 +2,14 @@
 
 ### fuller
 
-React server rendering from Gleam. `react-dom/server` is compiled to Erlang by [Arc](https://github.com/alii/arc), so React runs as a `.beam` on your node.
+React server rendering from Gleam. [Arc](https://github.com/alii/arc) compiles `react-dom/server` to Erlang, so React runs as a `.beam` on your node.
 
 [Arc](https://arc.alistair.sh) • [Documentation](https://scarlet.industries)
 
 ---
 
 > [!WARNING]
-> Fuller is very experimental! It is extremely big and extremely slow. Fuller gets better when changes to Carder and Arc are made that improve the Erlang they emit.
+> Fuller is very experimental. It is big and slow, and it gets faster as Carder and Arc emit better Erlang.
 
 ```gleam
 import fuller
@@ -27,15 +27,15 @@ pub fn main() {
 }
 ```
 
-`fuller.new()` boots React once and returns a `Renderer`, which is an immutable value so you can share it across processes. `render_to_string` returns HTML a client React can hydrate and `render_to_static_markup` returns plain HTML. Currently a 200 row table renders in about 20 ms on my Macbook. It is slow today.
-
-For a longer example run `gleam run -m example`
+`fuller.new()` boots React once and returns a `Renderer`, an immutable value that is safe to share across processes. `render_to_string` returns HTML that client React can hydrate, and `render_to_static_markup` returns plain HTML. A 200 row table takes about 20 ms to render on a MacBook. `gleam run -m example` runs a longer example.
 
 #### How it works
 
-`js/entry.js` imports `react` and the synchronous server renderer from `react-dom`. `scripts/build.sh` bundles that with Bun into one script and Arc's AOT compiler turns the script into `src/fuller_react_dom_server.erl`. That file is 9 MB, checked in, and compiles in about 8 seconds. `fuller.new()` runs its top level once and keeps `React.createElement`, `renderToString` and `renderToStaticMarkup`. React itself is unmodified React 19.
+`scripts/build.sh` bundles `js/entry.js`, which imports unmodified React 19 and its synchronous server renderer, into one script with Bun. Arc's AOT compiler turns that script into `src/fuller_react_dom_server.erl`, a checked-in file of about 10 MB.
 
-Gleam components with hooks and context work, the streaming renderers and client side hydration do not exist yet.
+Gleam components with hooks and context work. The streaming renderers and client side hydration do not exist yet.
+
+To regenerate the Erlang, with an Arc checkout next to this one:
 
 ```sh
 ARC_DIR=../arc scripts/build.sh
