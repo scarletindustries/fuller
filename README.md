@@ -31,9 +31,9 @@ pub fn main() {
 
 #### How it works
 
-`scripts/build.sh` bundles `js/entry.js`, which imports unmodified React 19 and its synchronous server renderer, into one script with Bun. Arc's AOT compiler turns that script into `src/fuller_react_dom_server.erl`, a checked-in file of about 10 MB.
+`scripts/build.sh` bundles `js/entry.js`, which imports unmodified React 19 and its synchronous server renderer, into one script with Bun. Arc's AOT compiler turns that script into `src/fuller_react_dom_server.erl`, a checked-in file of about 5 MB.
 
-Gleam components with hooks and context work. The streaming renderers and client side hydration do not exist yet.
+`fuller/element/html` and `fuller/element/svg` cover the HTML and SVG elements, and `fuller/attribute` and `fuller/attribute/svg` the attributes. Function names follow HTML and lustre (`readonly`, `tabindex`, `stroke_width`) and set React's props (`readOnly`, `tabIndex`, `strokeWidth`). The streaming renderers need web APIs Arc does not have yet (`MessageChannel`, `ReadableStream`, `TextEncoder`), and client side hydration does not exist yet.
 
 To regenerate the Erlang, with an Arc checkout next to this one:
 

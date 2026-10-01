@@ -467,3 +467,47 @@ pub fn rp(attributes: List(Attribute), children: List(Element)) -> Element {
 pub fn data(attributes: List(Attribute), children: List(Element)) -> Element {
   element.element("data", attributes, children)
 }
+
+pub fn area(attributes: List(Attribute)) -> Element {
+  element.element("area", attributes, [])
+}
+
+pub fn base(attributes: List(Attribute)) -> Element {
+  element.element("base", attributes, [])
+}
+
+pub fn embed(attributes: List(Attribute)) -> Element {
+  element.element("embed", attributes, [])
+}
+
+pub fn track(attributes: List(Attribute)) -> Element {
+  element.element("track", attributes, [])
+}
+
+pub fn hgroup(attributes: List(Attribute), children: List(Element)) -> Element {
+  element.element("hgroup", attributes, children)
+}
+
+pub fn search(attributes: List(Attribute), children: List(Element)) -> Element {
+  element.element("search", attributes, children)
+}
+
+pub fn math(attributes: List(Attribute), children: List(Element)) -> Element {
+  element.element("math", attributes, children)
+}
+
+pub fn del(attributes: List(Attribute), children: List(Element)) -> Element {
+  element.element("del", attributes, children)
+}
+
+pub fn ins(attributes: List(Attribute), children: List(Element)) -> Element {
+  element.element("ins", attributes, children)
+}
+
+pub fn map(attributes: List(Attribute), children: List(Element)) -> Element {
+  element.element("map", attributes, children)
+}
+
+pub fn object(attributes: List(Attribute), children: List(Element)) -> Element {
+  element.element("object", attributes, children)
+}
