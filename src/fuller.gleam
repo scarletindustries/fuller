@@ -36,8 +36,9 @@ import fuller/attribute.{
   IntAttribute, Style,
 }
 import fuller/element.{
-  type Element, Component, Element, Fragment, Hook, None, Provider, Text,
-  UseContext, UseId, UseState,
+  type Element, Component, Element, Fragment, Hook, None, Provider, Suspense,
+  Text, UseCallback, UseContext, UseDeferredValue, UseEffect, UseId, UseMemo,
+  UseOptimistic, UseRef, UseState, UseSyncExternalStore, UseTransition,
 }
 import fuller/internal/render
 import gleam/dynamic.{type Dynamic}
@@ -102,7 +103,19 @@ pub fn new() -> Renderer {
       let #(use_id, st) = get(st, react, "useId")
       let #(use_context, st) = get(st, react, "useContext")
       let #(use_state, st) = get(st, react, "useState")
+      let #(use_memo, st) = get(st, react, "useMemo")
+      let #(use_callback, st) = get(st, react, "useCallback")
+      let #(use_ref, st) = get(st, react, "useRef")
+      let #(use_deferred_value, st) = get(st, react, "useDeferredValue")
+      let #(use_transition, st) = get(st, react, "useTransition")
+      let #(use_optimistic, st) = get(st, react, "useOptimistic")
+      let #(use_effect, st) = get(st, react, "useEffect")
+      let #(use_layout_effect, st) = get(st, react, "useLayoutEffect")
+      let #(use_insertion_effect, st) = get(st, react, "useInsertionEffect")
+      let #(use_sync_external_store, st) =
+        get(st, react, "useSyncExternalStore")
       let #(create_context, st) = get(st, react, "createContext")
+      let #(suspense, st) = get(st, react, "Suspense")
       #(
         Renderer(
           engine: engine,
@@ -113,7 +126,18 @@ pub fn new() -> Renderer {
               use_id:,
               use_context:,
               use_state:,
+              use_memo:,
+              use_callback:,
+              use_ref:,
+              use_deferred_value:,
+              use_transition:,
+              use_optimistic:,
+              use_effect:,
+              use_layout_effect:,
+              use_insertion_effect:,
+              use_sync_external_store:,
               create_context:,
+              suspense:,
             ),
             table: mk_undefined(),
             in_component: False,
@@ -267,6 +291,16 @@ fn to_js(
       use kids, ctx <- then(children_to_js(ctx, js, children))
       host.call(ctx, js.create_element, mk_undefined(), [object, props, ..kids])
     }
+    Suspense(fallback, children) -> {
+      use fallback, ctx <- then(to_js(ctx, js, fallback))
+      let #(props, ctx) = host.object(ctx, [#("fallback", fallback)])
+      use kids, ctx <- then(children_to_js(ctx, js, children))
+      host.call(ctx, js.create_element, mk_undefined(), [
+        js.react.suspense,
+        props,
+        ..kids
+      ])
+    }
     Hook(hook, next) ->
       case js.in_component {
         True -> {
@@ -355,15 +389,113 @@ fn run_hook(
       )
       render.unwrap(ctx, value, "a context value")
     }
-    UseState(initial) -> {
-      let #(initial, ctx) = render.wrap(ctx, initial)
-      use pair, ctx <- then(
-        host.call(ctx, js.react.use_state, mk_undefined(), [initial]),
+    UseState(initial) -> first_of(ctx, js.react.use_state, initial, "a state")
+    UseOptimistic(state) ->
+      first_of(ctx, js.react.use_optimistic, state, "an optimistic state")
+    UseDeferredValue(value) ->
+      round_trip(
+        ctx,
+        js.react.use_deferred_value,
+        value,
+        [],
+        "a deferred value",
       )
-      let #(state, ctx) = render.get(ctx, pair, "0")
-      render.unwrap(ctx, state, "a state value")
+    UseCallback(callback, deps) -> {
+      let #(deps, ctx) = deps_array(ctx, deps)
+      round_trip(ctx, js.react.use_callback, callback, [deps], "a callback")
+    }
+    UseMemo(compute, deps) -> {
+      let #(value, ctx) = render.wrap(ctx, compute())
+      use create, ctx <- then(render.returning(ctx, js, value))
+      let #(deps, ctx) = deps_array(ctx, deps)
+      use value, ctx <- then(
+        host.call(ctx, js.react.use_memo, mk_undefined(), [create, deps]),
+      )
+      render.unwrap(ctx, value, "a memoized value")
+    }
+    UseRef(initial) -> {
+      let #(initial, ctx) = render.wrap(ctx, initial)
+      use ref, ctx <- then(
+        host.call(ctx, js.react.use_ref, mk_undefined(), [initial]),
+      )
+      let #(current, ctx) = render.get(ctx, ref, "current")
+      render.unwrap(ctx, current, "a ref value")
+    }
+    UseTransition -> {
+      use pair, ctx <- then(
+        host.call(ctx, js.react.use_transition, mk_undefined(), []),
+      )
+      let #(pending, ctx) = render.get(ctx, pair, "0")
+      case types.classify(pending) {
+        KBool(pending) -> #(Ok(render.to_dynamic(pending)), ctx)
+        _ ->
+          host_error(host.type_error(
+            ctx,
+            "fuller: useTransition returned a non-boolean",
+          ))
+      }
+    }
+    UseEffect(kind) -> {
+      let hook = case kind {
+        element.Effect -> js.react.use_effect
+        element.LayoutEffect -> js.react.use_layout_effect
+        element.InsertionEffect -> js.react.use_insertion_effect
+      }
+      use _nothing, ctx <- then(host.call(ctx, hook, mk_undefined(), []))
+      #(Ok(render.to_dynamic(Nil)), ctx)
+    }
+    UseSyncExternalStore(get_server_snapshot) -> {
+      let #(snapshot, ctx) = render.wrap(ctx, get_server_snapshot())
+      use get, ctx <- then(render.returning(ctx, js, snapshot))
+      use value, ctx <- then(
+        host.call(ctx, js.react.use_sync_external_store, mk_undefined(), [
+          mk_undefined(),
+          mk_undefined(),
+          get,
+        ]),
+      )
+      render.unwrap(ctx, value, "a store snapshot")
     }
   }
+}
+
+/// Calls a hook that takes one Gleam value (plus `extra` JS arguments) and
+/// returns one, and unwraps the result.
+fn round_trip(
+  ctx: Context(Dynamic),
+  hook: JsVal,
+  value: Dynamic,
+  extra: List(JsVal),
+  what: String,
+) -> Step(Dynamic) {
+  let #(value, ctx) = render.wrap(ctx, value)
+  use result, ctx <- then(
+    host.call(ctx, hook, mk_undefined(), [value, ..extra]),
+  )
+  render.unwrap(ctx, result, what)
+}
+
+/// Calls a hook that takes one Gleam value and returns a `[value, setter]`
+/// pair, and unwraps the value.
+fn first_of(
+  ctx: Context(Dynamic),
+  hook: JsVal,
+  value: Dynamic,
+  what: String,
+) -> Step(Dynamic) {
+  let #(value, ctx) = render.wrap(ctx, value)
+  use pair, ctx <- then(host.call(ctx, hook, mk_undefined(), [value]))
+  let #(first, ctx) = render.get(ctx, pair, "0")
+  render.unwrap(ctx, first, what)
+}
+
+/// A hook's dependency array: `[deps]`, one Gleam value (often a tuple).
+fn deps_array(
+  ctx: Context(Dynamic),
+  deps: Dynamic,
+) -> #(JsVal, Context(Dynamic)) {
+  let #(deps, ctx) = render.wrap(ctx, deps)
+  host.array(ctx, [deps])
 }
 
 /// A thrown error as a failed step of any type.

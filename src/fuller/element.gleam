@@ -20,6 +20,8 @@ pub type Element {
   /// A component: `render` runs inside React when it reaches this point in
   /// the tree, so hooks work in it. Made by `component.named`.
   Component(name: String, render: fn() -> Element)
+  /// A `<Suspense>` boundary. Made by `suspense`.
+  Suspense(fallback: Element, children: List(Element))
   /// A hook: asks React for something, then renders `next` with the
   /// answer. Made by the functions in `fuller/hook`.
   Hook(hook: Hook, next: fn(Dynamic) -> Element)
@@ -88,4 +90,43 @@ pub type Hook {
   UseContext(context: String, default: Dynamic)
   /// `useState(initial)`, answered with the current state.
   UseState(initial: Dynamic)
+  /// `useMemo(compute, [deps])`, answered with the computed value.
+  UseMemo(compute: fn() -> Dynamic, deps: Dynamic)
+  /// `useCallback(callback, [deps])`, answered with the callback.
+  UseCallback(callback: Dynamic, deps: Dynamic)
+  /// `useRef(initial)`, answered with the ref's `current`.
+  UseRef(initial: Dynamic)
+  /// `useDeferredValue(value)`, answered with the value.
+  UseDeferredValue(value: Dynamic)
+  /// `useTransition()`, answered with whether a transition is pending.
+  UseTransition
+  /// `useOptimistic(state)`, answered with the optimistic state.
+  UseOptimistic(state: Dynamic)
+  /// `useEffect`, `useLayoutEffect` or `useInsertionEffect`, answered with
+  /// `Nil`. Effects never run on the server.
+  UseEffect(kind: Effect)
+  /// `useSyncExternalStore`, answered with `get_server_snapshot()`.
+  UseSyncExternalStore(get_server_snapshot: fn() -> Dynamic)
+}
+
+/// Which effect hook a `UseEffect` is.
+pub type Effect {
+  Effect
+  LayoutEffect
+  InsertionEffect
+}
+
+/// A React `<Suspense>` boundary: renders `children`, or `fallback` in their
+/// place if something inside suspends. fuller uses React's synchronous
+/// renderer, which does not wait, so a suspending child always gets the
+/// fallback. With `render_to_string` the boundary leaves `<!--$-->` and
+/// `<!--/$-->` markers for hydration.
+///
+/// ```gleam
+/// element.suspense(html.p([], [html.text("Loading...")]), [comments()])
+/// ```
+///
+/// [React reference](https://react.dev/reference/react/Suspense)
+pub fn suspense(fallback: Element, children: List(Element)) -> Element {
+  Suspense(fallback:, children:)
 }

@@ -9,13 +9,24 @@ import arc/rt/types.{type JsVal, KUndef, StringKey, mk_undefined}
 import gleam/dynamic.{type Dynamic}
 import gleam/option.{None, Some}
 
-/// React's hooks and `createContext`, read once at boot.
+/// React's hooks, `createContext` and `Suspense`, read once at boot.
 pub type React {
   React(
     use_id: JsVal,
     use_context: JsVal,
     use_state: JsVal,
+    use_memo: JsVal,
+    use_callback: JsVal,
+    use_ref: JsVal,
+    use_deferred_value: JsVal,
+    use_transition: JsVal,
+    use_optimistic: JsVal,
+    use_effect: JsVal,
+    use_layout_effect: JsVal,
+    use_insertion_effect: JsVal,
+    use_sync_external_store: JsVal,
     create_context: JsVal,
+    suspense: JsVal,
   )
 }
 
@@ -134,4 +145,23 @@ pub fn context_object(
   use ctx <- cached(ctx, js, "context " <> name)
   let #(default, ctx) = wrap(ctx, default)
   host.call(ctx, js.react.create_context, mk_undefined(), [default])
+}
+
+/// A JS function that returns `value`, for hooks that take a function React
+/// calls straight away (`useMemo`, `useSyncExternalStore`). fuller computes
+/// the value itself first; one function per render serves every such call,
+/// so no hook allocates a function of its own.
+pub fn returning(
+  ctx: Context(Dynamic),
+  js: Js,
+  value: JsVal,
+) -> #(Result(JsVal, JsVal), Context(Dynamic)) {
+  let ctx = set(ctx, js.table, "pending value", value)
+  use ctx <- cached(ctx, js, "pending value function")
+  let #(function, ctx) =
+    host.function(ctx, "fuller", 0, fn(ctx, _args, _this) {
+      let #(value, ctx) = get(ctx, js.table, "pending value")
+      #(Ok(value), ctx)
+    })
+  #(Ok(function), ctx)
 }
