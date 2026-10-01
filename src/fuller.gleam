@@ -1,3 +1,26 @@
+//// Render React elements built in Gleam to HTML on the BEAM.
+////
+//// fuller runs unmodified React 19 and its synchronous server renderer,
+//// compiled to Erlang by Arc. Build elements with `fuller/element/html`,
+//// `fuller/element/svg` and `fuller/attribute`, boot React once with `new`,
+//// and render with `render_to_string` or `render_to_static_markup`.
+////
+//// ```gleam
+//// import fuller
+//// import fuller/attribute
+//// import fuller/element/html
+////
+//// pub fn main() {
+////   let renderer = fuller.new()
+////   let page =
+////     html.div([attribute.class("app")], [
+////       html.h1([], [html.text("Hello from the BEAM")]),
+////     ])
+////   let assert Ok(markup) = fuller.render_to_string(renderer, page)
+////   // <div class="app"><h1>Hello from the BEAM</h1></div>
+//// }
+//// ```
+
 import arc/bytecode/key
 import arc/engine.{type Engine}
 import arc/host.{type Context, Context}
@@ -15,7 +38,13 @@ import fuller/attribute.{
 import fuller/element.{type Element, Element, Fragment, None, Text}
 import gleam/list
 import gleam/result
+import gleam/string
 
+/// A booted copy of React and react-dom/server, ready to render.
+///
+/// Make one with `new` and reuse it. It is an immutable value, so it is safe
+/// to keep in a global or share between processes; each render starts from
+/// the same booted state and none of them affect the others.
 pub opaque type Renderer {
   Renderer(
     engine: Engine(Nil),
@@ -26,10 +55,28 @@ pub opaque type Renderer {
   )
 }
 
+/// Why a render failed.
 pub type RenderError {
+  /// React threw while rendering, or returned something that is not a
+  /// string. `message` is the JavaScript error, formatted with its stack
+  /// when there is one.
   ReactThrew(message: String)
 }
 
+/// Boots React and returns a `Renderer`.
+///
+/// This runs React's top-level code once, which takes on the order of 100
+/// ms, so call it at startup and reuse the result for every render rather
+/// than creating one per request.
+///
+/// Panics if React's top-level code throws, which would mean the bundled
+/// module is broken rather than anything about your elements.
+///
+/// ```gleam
+/// let renderer = fuller.new()
+/// let assert Ok(html) =
+///   fuller.render_to_string(renderer, html.p([], [html.text("Hi")]))
+/// ```
 pub fn new() -> Renderer {
   let engine = engine.new()
   let #(exports, engine) =
@@ -64,7 +111,22 @@ pub fn new() -> Renderer {
   )
 }
 
-/// HTML with hydration markers
+/// Renders an element to HTML that client-side React can hydrate.
+///
+/// The output carries what hydration needs, such as `<!-- -->` markers
+/// between adjacent text nodes, so the browser can attach React to it
+/// without re-rendering. When nothing on the client will hydrate the page,
+/// `render_to_static_markup` gives smaller, cleaner HTML.
+///
+/// This is React's synchronous renderer: it does not stream, and it does not
+/// wait for data, so a suspended component renders its nearest fallback.
+///
+/// ```gleam
+/// fuller.render_to_string(renderer, html.h1([], [html.text("Hello "), html.text("Gleam")]))
+/// // -> Ok("<h1>Hello <!-- -->Gleam</h1>")
+/// ```
+///
+/// [React reference](https://react.dev/reference/react-dom/server/renderToString)
 pub fn render_to_string(
   renderer: Renderer,
   element: Element,
@@ -72,7 +134,17 @@ pub fn render_to_string(
   render_with(renderer, renderer.render_to_string, element)
 }
 
-/// Plain HTML
+/// Renders an element to plain HTML, without anything hydration needs.
+///
+/// Use it for pages no client-side React will take over: emails, static
+/// pages, server-only HTML. The output cannot be hydrated.
+///
+/// ```gleam
+/// fuller.render_to_static_markup(renderer, html.p([], [html.text("a"), html.text("b")]))
+/// // -> Ok("<p>ab</p>")
+/// ```
+///
+/// [React reference](https://react.dev/reference/react-dom/server/renderToStaticMarkup)
 pub fn render_to_static_markup(
   renderer: Renderer,
   element: Element,
@@ -162,6 +234,7 @@ fn to_js(
     }
     Element(tag, attributes, children) -> {
       let #(props, ctx) = props_to_js(ctx, attributes)
+      let children = join_text_children(tag, children)
       use kids, ctx <- then(children_to_js(ctx, renderer, children))
       host.call(ctx, renderer.create_element, mk_undefined(), [
         mk_string(tag),
@@ -169,6 +242,24 @@ fn to_js(
         ..kids
       ])
     }
+  }
+}
+
+/// React renders `<title>`, `<style>` and `<script>` empty when they get
+/// more than one child, so text children built up in pieces are joined into
+/// one string first.
+fn join_text_children(tag: String, children: List(Element)) -> List(Element) {
+  case tag, children {
+    "title", [_, _, ..] | "style", [_, _, ..] | "script", [_, _, ..] ->
+      list.try_map(children, fn(child) {
+        case child {
+          Text(content) -> Ok(content)
+          _ -> Error(Nil)
+        }
+      })
+      |> result.map(fn(parts) { [Text(string.concat(parts))] })
+      |> result.unwrap(children)
+    _, _ -> children
   }
 }
 
