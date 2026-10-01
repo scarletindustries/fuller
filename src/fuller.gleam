@@ -35,7 +35,11 @@ import fuller/attribute.{
   type Attribute, Attribute, BoolAttribute, FloatAttribute, InnerHtml,
   IntAttribute, Style,
 }
-import fuller/element.{type Element, Element, Fragment, None, Text}
+import fuller/element.{
+  type Element, Component, Element, Fragment, None, Provider, Text,
+}
+import fuller/internal/render
+import gleam/dynamic.{type Dynamic}
 import gleam/list
 import gleam/result
 import gleam/string
@@ -47,9 +51,8 @@ import gleam/string
 /// the same booted state and none of them affect the others.
 pub opaque type Renderer {
   Renderer(
-    engine: Engine(Nil),
-    create_element: JsVal,
-    fragment: JsVal,
+    engine: Engine(Dynamic),
+    js: render.Js,
     render_to_string: JsVal,
     render_to_static_markup: JsVal,
   )
@@ -95,20 +98,30 @@ pub fn new() -> Renderer {
       let #(render_to_string, st) = get(st, exports, "renderToString")
       let #(render_to_static_markup, st) =
         get(st, exports, "renderToStaticMarkup")
+      let #(use_id, st) = get(st, react, "useId")
+      let #(use_context, st) = get(st, react, "useContext")
+      let #(use_state, st) = get(st, react, "useState")
+      let #(create_context, st) = get(st, react, "createContext")
       #(
-        #(create_element, fragment, render_to_string, render_to_static_markup),
+        Renderer(
+          engine: engine,
+          js: render.Js(
+            create_element:,
+            fragment:,
+            react: render.React(
+              use_id:,
+              use_context:,
+              use_state:,
+              create_context:,
+            ),
+          ),
+          render_to_string:,
+          render_to_static_markup:,
+        ),
         Context(..ctx, agent: st),
       )
     })
-  let #(create_element, fragment, render_to_string, render_to_static_markup) =
-    exports
-  Renderer(
-    engine:,
-    create_element:,
-    fragment:,
-    render_to_string:,
-    render_to_static_markup:,
-  )
+  Renderer(..exports, engine:)
 }
 
 /// Renders an element to HTML that client-side React can hydrate.
@@ -169,9 +182,10 @@ fn render_with(
   render_fn: JsVal,
   element: Element,
 ) -> Result(String, RenderError) {
+  render.reset()
   let #(outcome, engine) =
     engine.with_context(renderer.engine, fn(ctx) {
-      use el, ctx <- then(to_js(ctx, renderer, element))
+      use el, ctx <- then(to_js(ctx, renderer.js, element))
       host.call(ctx, render_fn, mk_undefined(), [el])
     })
   case outcome {
@@ -206,9 +220,9 @@ fn kind_name(kind: JsValKind) -> String {
 }
 
 type Step(a) =
-  #(Result(a, JsVal), Context(Nil))
+  #(Result(a, JsVal), Context(Dynamic))
 
-fn then(step: Step(a), k: fn(a, Context(Nil)) -> Step(b)) -> Step(b) {
+fn then(step: Step(a), k: fn(a, Context(Dynamic)) -> Step(b)) -> Step(b) {
   let #(result, ctx) = step
   case result {
     Ok(v) -> k(v, ctx)
@@ -217,26 +231,47 @@ fn then(step: Step(a), k: fn(a, Context(Nil)) -> Step(b)) -> Step(b) {
 }
 
 fn to_js(
-  ctx: Context(Nil),
-  renderer: Renderer,
+  ctx: Context(Dynamic),
+  js: render.Js,
   element: Element,
 ) -> Step(JsVal) {
   case element {
     Text(content) -> #(Ok(mk_string(content)), ctx)
     None -> #(Ok(mk_null()), ctx)
     Fragment(children) -> {
-      use kids, ctx <- then(children_to_js(ctx, renderer, children))
-      host.call(ctx, renderer.create_element, mk_undefined(), [
-        renderer.fragment,
+      use kids, ctx <- then(children_to_js(ctx, js, children))
+      host.call(ctx, js.create_element, mk_undefined(), [
+        js.fragment,
         mk_null(),
         ..kids
       ])
     }
+    Component(name, render_fn) -> {
+      let #(function, ctx) =
+        render.component_function(ctx, name, fn(ctx, args, _this) {
+          render_component(js, ctx, args)
+        })
+      let #(render_fn, ctx) = render.wrap(ctx, render_fn)
+      let #(props, ctx) = host.object(ctx, [#("render", render_fn)])
+      host.call(ctx, js.create_element, mk_undefined(), [function, props])
+    }
+    Provider(context, default, value, children) -> {
+      use object, ctx <- then(render.context_object(
+        ctx,
+        js.react,
+        context,
+        default,
+      ))
+      let #(value, ctx) = render.wrap(ctx, value)
+      let #(props, ctx) = host.object(ctx, [#("value", value)])
+      use kids, ctx <- then(children_to_js(ctx, js, children))
+      host.call(ctx, js.create_element, mk_undefined(), [object, props, ..kids])
+    }
     Element(tag, attributes, children) -> {
       let #(props, ctx) = props_to_js(ctx, attributes)
       let children = join_text_children(tag, children)
-      use kids, ctx <- then(children_to_js(ctx, renderer, children))
-      host.call(ctx, renderer.create_element, mk_undefined(), [
+      use kids, ctx <- then(children_to_js(ctx, js, children))
+      host.call(ctx, js.create_element, mk_undefined(), [
         mk_string(tag),
         props,
         ..kids
@@ -263,24 +298,42 @@ fn join_text_children(tag: String, children: List(Element)) -> List(Element) {
   }
 }
 
+/// What React calls for a component: reads the element's render function
+/// from its props and runs it as the current component.
+fn render_component(
+  js: render.Js,
+  ctx: Context(Dynamic),
+  args: List(JsVal),
+) -> #(Result(JsVal, JsVal), Context(Dynamic)) {
+  let props = case args {
+    [props, ..] -> props
+    [] -> mk_undefined()
+  }
+  let #(render_fn, ctx) = render.get(ctx, props, "render")
+  let render_fn: fn() -> Element = render.unwrap(ctx, render_fn, "a component")
+  let frame = render.Frame(ctx:, react: js.react)
+  let #(element, ctx) = render.with_frame(frame, render_fn)
+  to_js(ctx, js, element)
+}
+
 fn children_to_js(
-  ctx: Context(Nil),
-  renderer: Renderer,
+  ctx: Context(Dynamic),
+  js: render.Js,
   children: List(Element),
 ) -> Step(List(JsVal)) {
   let #(reversed, ctx) =
     list.fold(children, #(Ok([]), ctx), fn(acc, child) {
       use done, ctx <- then(acc)
-      use v, ctx <- then(to_js(ctx, renderer, child))
+      use v, ctx <- then(to_js(ctx, js, child))
       #(Ok([v, ..done]), ctx)
     })
   #(result.map(reversed, list.reverse), ctx)
 }
 
 fn props_to_js(
-  ctx: Context(Nil),
+  ctx: Context(Dynamic),
   attributes: List(Attribute),
-) -> #(JsVal, Context(Nil)) {
+) -> #(JsVal, Context(Dynamic)) {
   case attributes {
     [] -> #(mk_null(), ctx)
     _ -> {
@@ -296,9 +349,9 @@ fn props_to_js(
 }
 
 fn prop_to_js(
-  ctx: Context(Nil),
+  ctx: Context(Dynamic),
   attribute: Attribute,
-) -> #(#(String, JsVal), Context(Nil)) {
+) -> #(#(String, JsVal), Context(Dynamic)) {
   case attribute {
     Attribute(name, value) -> #(#(name, mk_string(value)), ctx)
     IntAttribute(name, value) -> #(#(name, mk_number(JInt(value))), ctx)

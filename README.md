@@ -27,7 +27,40 @@ pub fn main() {
 }
 ```
 
-`fuller.new()` boots React once and returns a `Renderer`, an immutable value that is safe to share across processes. `render_to_string` returns HTML that client React can hydrate, and `render_to_static_markup` returns plain HTML. A 200 row table takes about 20 ms to render on a MacBook. `gleam run -m example` runs a longer example.
+`fuller.new()` boots React once and returns a `Renderer`, an immutable value that is safe to share across processes. `render_to_string` returns HTML that client React can hydrate, and `render_to_static_markup` returns plain HTML. A 200 row table takes about 13 ms to render on a MacBook. `gleam run -m example` runs a longer example.
+
+#### Components, context and hooks
+
+A component is a function whose first line is `use <- component.named("Name")`. Its arguments are its props, and React calls the rest while rendering, so hooks work there:
+
+```gleam
+import fuller/component
+import fuller/context
+import fuller/hook
+
+pub type Theme {
+  Light
+  Dark
+}
+
+pub const theme = context.Context(name: "theme", default: Light)
+
+pub fn card(title title: String) -> Element {
+  use <- component.named("Card")
+  let id = hook.use_id()
+  let class = case hook.use_context(theme) {
+    Light -> "card"
+    Dark -> "card dark"
+  }
+  html.section([attribute.class(class), attribute.aria_labelledby(id)], [
+    html.h2([attribute.id(id)], [html.text(title)]),
+  ])
+}
+
+context.provide(theme, Dark, [card(title: "Hello"), card(title: "Again")])
+```
+
+`fuller/hook` has `use_id`, `use_context`, `use_state` and `use_reducer`. The server renders each component once, so state stays at its initial value. A component costs about 12 µs more than a plain function.
 
 #### How it works
 

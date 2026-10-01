@@ -2,6 +2,7 @@
 //// in `fuller/element/html` and `fuller/element/svg`.
 
 import fuller/attribute.{type Attribute}
+import gleam/dynamic.{type Dynamic}
 
 /// Something React can render: an element, a text node, a fragment, or
 /// nothing. Build them with the functions below, or with the per-tag
@@ -16,6 +17,17 @@ pub type Element {
   Fragment(children: List(Element))
   /// Renders nothing.
   None
+  /// A component: `render` runs inside React when it reaches this point in
+  /// the tree, so hooks work in it. Made by `component.named`.
+  Component(name: String, render: fn() -> Element)
+  /// Gives `children` a value for the context named `context`. Made by
+  /// `context.provide`.
+  Provider(
+    context: String,
+    default: Dynamic,
+    value: Dynamic,
+    children: List(Element),
+  )
 }
 
 /// An element with any tag. Use it for tags fuller has no helper for, such
