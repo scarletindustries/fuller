@@ -31,7 +31,7 @@ pub fn main() {
 
 #### Components, context and hooks
 
-A component is a function whose first line is `use <- component.named("Name")`. Its arguments are its props, and React calls the rest while rendering, so hooks work there:
+A component is a function whose first line is `use <- component.named("Name")`. Its arguments are its props, and React calls the rest while rendering. Hooks are `use` steps after that line:
 
 ```gleam
 import fuller/component
@@ -47,8 +47,9 @@ pub const theme = context.Context(name: "theme", default: Light)
 
 pub fn card(title title: String) -> Element {
   use <- component.named("Card")
-  let id = hook.use_id()
-  let class = case hook.use_context(theme) {
+  use id <- hook.use_id()
+  use current <- hook.use_context(theme)
+  let class = case current {
     Light -> "card"
     Dark -> "card dark"
   }

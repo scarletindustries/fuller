@@ -6,6 +6,7 @@ import fuller/element.{type Element}
 import fuller/element/html
 import fuller/hook
 import gleam/int
+import gleam/string
 
 pub type Theme {
   Light
@@ -32,12 +33,13 @@ fn greeting(name name: String) -> Element {
 
 fn themed() -> Element {
   use <- component.named("Themed")
-  html.span([], [html.text(theme_name(hook.use_context(theme)))])
+  use current <- hook.use_context(theme)
+  html.span([], [html.text(theme_name(current))])
 }
 
 fn field(label label: String) -> Element {
   use <- component.named("Field")
-  let id = hook.use_id()
+  use id <- hook.use_id()
   html.div([], [
     html.label([attribute.for(id)], [html.text(label)]),
     html.input([attribute.id(id)]),
@@ -46,8 +48,8 @@ fn field(label label: String) -> Element {
 
 fn counter() -> Element {
   use <- component.named("Counter")
-  let #(count, _set) = hook.use_state(41)
-  let #(total, _dispatch) = hook.use_reducer(fn(n, add) { n + add }, 1)
+  use count, _set <- hook.use_state(41)
+  use total, _dispatch <- hook.use_reducer(fn(n, add) { n + add }, 1)
   html.p([], [html.text(int.to_string(count + total))])
 }
 
@@ -102,4 +104,28 @@ pub fn renders_are_independent_test() {
     )
     == Ok("<span>dark</span>")
   assert fuller.render_to_static_markup(r, themed()) == Ok("<span>light</span>")
+}
+
+pub fn hook_outside_component_is_a_render_error_test() {
+  let el = {
+    use id <- hook.use_id()
+    html.p([attribute.id(id)], [])
+  }
+  let assert Error(fuller.ReactThrew(message)) = render(el)
+  assert string.contains(message, "hooks can only be used inside a component")
+}
+
+pub fn several_hooks_in_order_test() {
+  let el = {
+    use <- component.named("Many")
+    use a <- hook.use_id()
+    use current <- hook.use_context(theme)
+    use count, _set <- hook.use_state(1)
+    use b <- hook.use_id()
+    html.p([attribute.id(a), attribute.title(b)], [
+      html.text(theme_name(current) <> int.to_string(count)),
+    ])
+  }
+  assert render(context.provide(theme, Dark, [el]))
+    == Ok("<p id=\"_R_0_\" title=\"_R_0H1_\">dark1</p>")
 }

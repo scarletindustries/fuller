@@ -25,7 +25,8 @@
 ////
 //// fn button() -> Element {
 ////   use <- component.named("Button")
-////   case hook.use_context(theme) {
+////   use current <- hook.use_context(theme)
+////   case current {
 ////     Light -> html.button([], [html.text("Light")])
 ////     Dark -> html.button([], [html.text("Dark")])
 ////   }
@@ -40,14 +41,14 @@ import fuller/internal/render
 /// A context that holds a value of type `a`.
 ///
 /// `name` identifies it within a render, so two contexts must not share a
-/// name. `default` is what `hook.use_context` returns when no `provide` is
+/// name. `default` is what `hook.use_context` gives when no `provide` is
 /// above the component reading it.
 pub type Context(a) {
   Context(name: String, default: a)
 }
 
 /// Gives `children`, and everything inside them, `value` for `context`.
-/// Components inside read it with `hook.use_context(context)`. An inner
+/// Components inside read it with `use value <- hook.use_context(context)`. An inner
 /// `provide` for the same context overrides an outer one.
 ///
 /// ```gleam

@@ -36,7 +36,8 @@ import fuller/attribute.{
   IntAttribute, Style,
 }
 import fuller/element.{
-  type Element, Component, Element, Fragment, None, Provider, Text,
+  type Element, Component, Element, Fragment, Hook, None, Provider, Text,
+  UseContext, UseId, UseState,
 }
 import fuller/internal/render
 import gleam/dynamic.{type Dynamic}
@@ -114,6 +115,8 @@ pub fn new() -> Renderer {
               use_state:,
               create_context:,
             ),
+            table: mk_undefined(),
+            in_component: False,
           ),
           render_to_string:,
           render_to_static_markup:,
@@ -182,10 +185,11 @@ fn render_with(
   render_fn: JsVal,
   element: Element,
 ) -> Result(String, RenderError) {
-  render.reset()
   let #(outcome, engine) =
     engine.with_context(renderer.engine, fn(ctx) {
-      use el, ctx <- then(to_js(ctx, renderer.js, element))
+      let #(table, ctx) = host.object(ctx, [])
+      let js = render.Js(..renderer.js, table:, in_component: False)
+      use el, ctx <- then(to_js(ctx, js, element))
       host.call(ctx, render_fn, mk_undefined(), [el])
     })
   case outcome {
@@ -247,26 +251,34 @@ fn to_js(
       ])
     }
     Component(name, render_fn) -> {
-      let #(function, ctx) =
-        render.component_function(ctx, name, fn(ctx, args, _this) {
+      use function, ctx <- then(
+        render.component_function(ctx, js, name, fn(ctx, args, _this) {
           render_component(js, ctx, args)
-        })
+        }),
+      )
       let #(render_fn, ctx) = render.wrap(ctx, render_fn)
       let #(props, ctx) = host.object(ctx, [#("render", render_fn)])
       host.call(ctx, js.create_element, mk_undefined(), [function, props])
     }
     Provider(context, default, value, children) -> {
-      use object, ctx <- then(render.context_object(
-        ctx,
-        js.react,
-        context,
-        default,
-      ))
+      use object, ctx <- then(render.context_object(ctx, js, context, default))
       let #(value, ctx) = render.wrap(ctx, value)
       let #(props, ctx) = host.object(ctx, [#("value", value)])
       use kids, ctx <- then(children_to_js(ctx, js, children))
       host.call(ctx, js.create_element, mk_undefined(), [object, props, ..kids])
     }
+    Hook(hook, next) ->
+      case js.in_component {
+        True -> {
+          use answer, ctx <- then(run_hook(ctx, js, hook))
+          to_js(ctx, js, next(answer))
+        }
+        False ->
+          host.type_error(
+            ctx,
+            "fuller: hooks can only be used inside a component, after `use <- component.named(...)`",
+          )
+      }
     Element(tag, attributes, children) -> {
       let #(props, ctx) = props_to_js(ctx, attributes)
       let children = join_text_children(tag, children)
@@ -299,21 +311,66 @@ fn join_text_children(tag: String, children: List(Element)) -> List(Element) {
 }
 
 /// What React calls for a component: reads the element's render function
-/// from its props and runs it as the current component.
+/// from its props and converts what it returns, with hooks allowed.
 fn render_component(
   js: render.Js,
   ctx: Context(Dynamic),
   args: List(JsVal),
-) -> #(Result(JsVal, JsVal), Context(Dynamic)) {
+) -> Step(JsVal) {
   let props = case args {
     [props, ..] -> props
     [] -> mk_undefined()
   }
   let #(render_fn, ctx) = render.get(ctx, props, "render")
-  let render_fn: fn() -> Element = render.unwrap(ctx, render_fn, "a component")
-  let frame = render.Frame(ctx:, react: js.react)
-  let #(element, ctx) = render.with_frame(frame, render_fn)
-  to_js(ctx, js, element)
+  use render_fn, ctx <- then(unwrap_component(ctx, render_fn))
+  to_js(ctx, render.Js(..js, in_component: True), render_fn())
+}
+
+fn unwrap_component(
+  ctx: Context(Dynamic),
+  value: JsVal,
+) -> Step(fn() -> Element) {
+  render.unwrap(ctx, value, "a component")
+}
+
+/// Asks React for what `hook` wants, while it is calling a component.
+fn run_hook(
+  ctx: Context(Dynamic),
+  js: render.Js,
+  hook: element.Hook,
+) -> Step(Dynamic) {
+  case hook {
+    UseId -> {
+      use id, ctx <- then(host.call(ctx, js.react.use_id, mk_undefined(), []))
+      case types.classify(id) {
+        KStr(id) -> #(Ok(render.to_dynamic(id)), ctx)
+        _ ->
+          host_error(host.type_error(ctx, "fuller: useId returned a non-string"))
+      }
+    }
+    UseContext(context, default) -> {
+      use object, ctx <- then(render.context_object(ctx, js, context, default))
+      use value, ctx <- then(
+        host.call(ctx, js.react.use_context, mk_undefined(), [object]),
+      )
+      render.unwrap(ctx, value, "a context value")
+    }
+    UseState(initial) -> {
+      let #(initial, ctx) = render.wrap(ctx, initial)
+      use pair, ctx <- then(
+        host.call(ctx, js.react.use_state, mk_undefined(), [initial]),
+      )
+      let #(state, ctx) = render.get(ctx, pair, "0")
+      render.unwrap(ctx, state, "a state value")
+    }
+  }
+}
+
+/// A thrown error as a failed step of any type.
+fn host_error(thrown: #(Result(JsVal, JsVal), Context(Dynamic))) -> Step(a) {
+  case thrown {
+    #(Error(error), ctx) | #(Ok(error), ctx) -> #(Error(error), ctx)
+  }
 }
 
 fn children_to_js(

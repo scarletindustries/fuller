@@ -14,7 +14,7 @@
 ////
 //// pub fn card(title title: String, body body: String) -> Element {
 ////   use <- component.named("Card")
-////   let id = hook.use_id()
+////   use id <- hook.use_id()
 ////   html.section([attribute.aria_labelledby(id)], [
 ////     html.h2([attribute.id(id)], [html.text(title)]),
 ////     html.p([], [html.text(body)]),
@@ -33,7 +33,7 @@ import fuller/element.{type Element, Component}
 ///
 /// Everything after `use <- component.named("Name")` runs when React
 /// reaches this component in the tree, not when the function is called, so
-/// hooks work there. `name` is what React shows in error messages and stack
+/// hooks from `fuller/hook` work there. `name` is what React shows in error messages and stack
 /// traces.
 ///
 /// ```gleam

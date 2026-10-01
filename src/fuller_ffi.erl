@@ -1,5 +1,5 @@
 -module(fuller_ffi).
--export([boot/1, coerce/1, pdict_put/2, pdict_get/1, pdict_erase/1]).
+-export([boot/1, coerce/1]).
 
 boot(St) ->
     Frame = {undefined, undefined, undefined, undefined},
@@ -10,17 +10,3 @@ boot(St) ->
     end.
 
 coerce(X) -> X.
-
-pdict_put(Key, Value) ->
-    put({fuller, Key}, Value),
-    nil.
-
-pdict_get(Key) ->
-    case get({fuller, Key}) of
-        undefined -> none;
-        Value -> {some, Value}
-    end.
-
-pdict_erase(Key) ->
-    erase({fuller, Key}),
-    nil.
