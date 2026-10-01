@@ -116,23 +116,61 @@ pub fn svg_test() {
     svg.svg([svg_attribute.view_box("0 0 10 10")], [
       svg.defs([], [
         svg.linear_gradient([attribute.id("g")], [
-          svg.stop([
-            svg_attribute.offset("0"),
-            svg_attribute.stop_color("red"),
-          ]),
+          svg.stop(
+            [
+              svg_attribute.offset("0"),
+              svg_attribute.stop_color("red"),
+            ],
+            [],
+          ),
         ]),
       ]),
-      svg.path([
-        svg_attribute.d("M0 0L10 10"),
-        svg_attribute.stroke_width("2"),
-        svg_attribute.fill_rule("evenodd"),
-      ]),
-      svg.use_([svg_attribute.xlink_href("#g")]),
+      svg.path(
+        [
+          svg_attribute.d("M0 0L10 10"),
+          svg_attribute.stroke_width("2"),
+          svg_attribute.fill_rule("evenodd"),
+        ],
+        [],
+      ),
+      svg.use_([svg_attribute.xlink_href("#g")], []),
       svg.text([svg_attribute.text_anchor("middle")], [html.text("hi")]),
-      svg.fe_gaussian_blur([svg_attribute.std_deviation("2")]),
+      svg.fe_gaussian_blur([svg_attribute.std_deviation("2")], []),
     ])
   assert render(el)
     == Ok(
       "<svg viewBox=\"0 0 10 10\"><defs><linearGradient id=\"g\"><stop offset=\"0\" stop-color=\"red\"></stop></linearGradient></defs><path d=\"M0 0L10 10\" stroke-width=\"2\" fill-rule=\"evenodd\"></path><use xlink:href=\"#g\"></use><text text-anchor=\"middle\">hi</text><feGaussianBlur stdDeviation=\"2\"></feGaussianBlur></svg>",
     )
+}
+
+pub fn ismap_test() {
+  assert render(html.img([attribute.ismap(True), attribute.alt("map")]))
+    == Ok("<img isMap=\"\" alt=\"map\"/>")
+  assert render(html.img([attribute.ismap(False), attribute.alt("map")]))
+    == Ok("<img alt=\"map\"/>")
+}
+
+pub fn svg_shapes_take_title_and_animation_children_test() {
+  let el =
+    svg.svg([], [
+      svg.circle([svg_attribute.r("4"), svg_attribute.filter("url(#f)")], [
+        svg.title([], [html.text("tip")]),
+        svg.animate([svg_attribute.dur("2s")], []),
+      ]),
+      svg.fe_flood(
+        [svg_attribute.flood_color("red"), svg_attribute.flood_opacity("0.5")],
+        [],
+      ),
+    ])
+  assert render(el)
+    == Ok(
+      "<svg><circle r=\"4\" filter=\"url(#f)\"><title>tip</title><animate dur=\"2s\"></animate></circle><feFlood flood-color=\"red\" flood-opacity=\"0.5\"></feFlood></svg>",
+    )
+}
+
+pub fn title_style_and_script_join_text_children_test() {
+  assert render(html.title([], [html.text("Page "), html.text("one")]))
+    == Ok("<title>Page one</title>")
+  assert render(html.style([], [html.text("a{}"), html.text("b{}")]))
+    == Ok("<style>a{}b{}</style>")
 }
