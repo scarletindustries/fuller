@@ -1,5 +1,5 @@
 -module(fuller_ffi).
--export([boot/1]).
+-export([boot/1, coerce/1]).
 
 boot(St) ->
     Frame = {undefined, undefined, undefined, undefined},
@@ -8,3 +8,5 @@ boot(St) ->
     catch
         error:{wasm_exn, 0, [St1, Thrown]} -> {threw, Thrown, St1}
     end.
+
+coerce(X) -> X.
