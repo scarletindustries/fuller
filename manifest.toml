@@ -7,7 +7,7 @@
 # You should check this file into your source control repository.
 
 packages = [
-  { name = "arc", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib", "simplifile"], source = "git", repo = "https://github.com/alii/arc", commit = "e76ebc4b774e83b6502c5144716df516258c5da0" },
+  { name = "arc", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib", "simplifile"], source = "git", repo = "https://github.com/alii/arc", commit = "5786c855d7e7e486c62cad6dbea9de20137d69d5" },
   { name = "argv", version = "1.1.0", build_tools = ["gleam"], requirements = [], otp_app = "argv", source = "hex", outer_checksum = "3277D100448BDB4A29B6D58C0F36F631CBC349E8BDD09766C6309DF202831140" },
   { name = "carder", version = "1.0.0", build_tools = ["gleam"], requirements = ["argv", "gleam_erlang", "gleam_stdlib", "simplifile"], source = "git", repo = "https://github.com/scarletindustries/carder", commit = "e2c0092132df7fd0cd26b3931a83e8ba1d9ef551" },
   { name = "filepath", version = "1.1.2", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "filepath", source = "hex", outer_checksum = "B06A9AF0BF10E51401D64B98E4B627F1D2E48C154967DA7AF4D0914780A6D40A" },
@@ -18,7 +18,7 @@ packages = [
 ]
 
 [requirements]
-arc = { git = "https://github.com/alii/arc", ref = "e76ebc4b774e83b6502c5144716df516258c5da0" }
+arc = { git = "https://github.com/alii/arc", ref = "5786c855d7e7e486c62cad6dbea9de20137d69d5" }
 carder = { git = "https://github.com/scarletindustries/carder", ref = "e2c0092132df7fd0cd26b3931a83e8ba1d9ef551" }
 gleam_stdlib = { version = ">= 0.44.0 and < 2.0.0" }
 gleeunit = { version = ">= 1.0.0 and < 2.0.0" }

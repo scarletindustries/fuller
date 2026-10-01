@@ -7,7 +7,7 @@ repository = { type = "github", user = "scarletindustries", repo = "fuller" }
 
 [dependencies]
 gleam_stdlib = ">= 0.44.0 and < 2.0.0"
-arc = { git = "https://github.com/alii/arc", ref = "e76ebc4b774e83b6502c5144716df516258c5da0" }
+arc = { git = "https://github.com/alii/arc", ref = "5786c855d7e7e486c62cad6dbea9de20137d69d5" }
 carder = { git = "https://github.com/scarletindustries/carder", ref = "e2c0092132df7fd0cd26b3931a83e8ba1d9ef551" }
 
 [dev-dependencies]
