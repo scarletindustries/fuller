@@ -61,7 +61,7 @@ pub fn card(title title: String) -> Element {
 context.provide(theme, Dark, [card(title: "Hello"), card(title: "Again")])
 ```
 
-`fuller/hook` has `use_id`, `use_context`, `use_state` and `use_reducer`. The server renders each component once, so state stays at its initial value. A component costs about 12 µs more than a plain function.
+`fuller/hook` has `use_id`, `use_context`, `use_state`, `use_reducer`, `use_memo`, `use_callback`, `use_ref`, `use_deferred_value`, `use_transition`, `use_optimistic`, `use_sync_external_store` and the effect hooks, and `element.suspense` makes a `<Suspense>` boundary. The server renders each component once, so state stays at its initial value and effects never run. A component costs about 12 µs more than a plain function.
 
 #### How it works
 
