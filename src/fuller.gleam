@@ -95,7 +95,7 @@ pub fn new() -> Renderer {
           }
       }
       let #(react, st) = get(st, exports, "React")
-      let #(create_element, st) = get(st, react, "createElement")
+      let #(jsx, st) = get(st, exports, "jsx")
       let #(fragment, st) = get(st, react, "Fragment")
       let #(render_to_string, st) = get(st, exports, "renderToString")
       let #(render_to_static_markup, st) =
@@ -116,36 +116,55 @@ pub fn new() -> Renderer {
         get(st, react, "useSyncExternalStore")
       let #(create_context, st) = get(st, react, "createContext")
       let #(suspense, st) = get(st, react, "Suspense")
+      let #(bind, st) = get(st, jsx, "bind")
+      let #(first_argument, ctx) =
+        host.function(
+          Context(..ctx, agent: st),
+          "fuller",
+          1,
+          fn(ctx, args, _this) {
+            #(Ok(list.first(args) |> result.unwrap(mk_undefined())), ctx)
+          },
+        )
+      let js =
+        render.Js(
+          jsx:,
+          fragment:,
+          react: render.React(
+            use_id:,
+            use_context:,
+            use_state:,
+            use_memo:,
+            use_callback:,
+            use_ref:,
+            use_deferred_value:,
+            use_transition:,
+            use_optimistic:,
+            use_effect:,
+            use_layout_effect:,
+            use_insertion_effect:,
+            use_sync_external_store:,
+            create_context:,
+            suspense:,
+          ),
+          bind:,
+          component: mk_undefined(),
+          first_argument:,
+          table: mk_undefined(),
+          in_component: False,
+        )
+      let #(component, ctx) =
+        host.function(ctx, "fuller", 1, fn(ctx, args, _this) {
+          render_component(js, ctx, args)
+        })
       #(
         Renderer(
           engine: engine,
-          js: render.Js(
-            create_element:,
-            fragment:,
-            react: render.React(
-              use_id:,
-              use_context:,
-              use_state:,
-              use_memo:,
-              use_callback:,
-              use_ref:,
-              use_deferred_value:,
-              use_transition:,
-              use_optimistic:,
-              use_effect:,
-              use_layout_effect:,
-              use_insertion_effect:,
-              use_sync_external_store:,
-              create_context:,
-              suspense:,
-            ),
-            table: mk_undefined(),
-            in_component: False,
-          ),
+          js: render.Js(..js, component:),
           render_to_string:,
           render_to_static_markup:,
         ),
-        Context(..ctx, agent: st),
+        ctx,
       )
     })
   Renderer(..exports, engine:)
@@ -268,38 +287,23 @@ fn to_js(
     None -> #(Ok(mk_null()), ctx)
     Fragment(children) -> {
       use kids, ctx <- then(children_to_js(ctx, js, children))
-      host.call(ctx, js.create_element, mk_undefined(), [
-        js.fragment,
-        mk_null(),
-        ..kids
-      ])
+      jsx(ctx, js, js.fragment, [], kids)
     }
     Component(name, render_fn) -> {
-      use function, ctx <- then(
-        render.component_function(ctx, js, name, fn(ctx, args, _this) {
-          render_component(js, ctx, args)
-        }),
-      )
+      use function, ctx <- then(render.component_function(ctx, js, name))
       let #(render_fn, ctx) = render.wrap(ctx, render_fn)
-      let #(props, ctx) = host.object(ctx, [#("render", render_fn)])
-      host.call(ctx, js.create_element, mk_undefined(), [function, props])
+      jsx(ctx, js, function, [#("render", render_fn)], [])
     }
     Provider(context, default, value, children) -> {
       use object, ctx <- then(render.context_object(ctx, js, context, default))
       let #(value, ctx) = render.wrap(ctx, value)
-      let #(props, ctx) = host.object(ctx, [#("value", value)])
       use kids, ctx <- then(children_to_js(ctx, js, children))
-      host.call(ctx, js.create_element, mk_undefined(), [object, props, ..kids])
+      jsx(ctx, js, object, [#("value", value)], kids)
     }
     Suspense(fallback, children) -> {
       use fallback, ctx <- then(to_js(ctx, js, fallback))
-      let #(props, ctx) = host.object(ctx, [#("fallback", fallback)])
       use kids, ctx <- then(children_to_js(ctx, js, children))
-      host.call(ctx, js.create_element, mk_undefined(), [
-        js.react.suspense,
-        props,
-        ..kids
-      ])
+      jsx(ctx, js, js.react.suspense, [#("fallback", fallback)], kids)
     }
     Hook(hook, next) ->
       case js.in_component {
@@ -317,13 +321,31 @@ fn to_js(
       let #(props, ctx) = props_to_js(ctx, attributes)
       let children = join_text_children(tag, children)
       use kids, ctx <- then(children_to_js(ctx, js, children))
-      host.call(ctx, js.create_element, mk_undefined(), [
-        mk_string(tag),
-        props,
-        ..kids
-      ])
+      jsx(ctx, js, mk_string(tag), props, kids)
     }
   }
+}
+
+/// Makes a React element with `jsx` from `react/jsx-runtime`, the function
+/// JSX compiles to. The children go in the props: one on its own, several as
+/// an array.
+fn jsx(
+  ctx: Context(Dynamic),
+  js: render.Js,
+  type_: JsVal,
+  props: List(#(String, JsVal)),
+  kids: List(JsVal),
+) -> Step(JsVal) {
+  let #(props, ctx) = case kids {
+    [] -> #(props, ctx)
+    [only] -> #(list.append(props, [#("children", only)]), ctx)
+    _ -> {
+      let #(kids, ctx) = host.array(ctx, kids)
+      #(list.append(props, [#("children", kids)]), ctx)
+    }
+  }
+  let #(props, ctx) = host.object(ctx, props)
+  host.call(ctx, js.jsx, mk_undefined(), [type_, props])
 }
 
 /// React renders `<title>`, `<style>` and `<script>` empty when they get
@@ -346,18 +368,22 @@ fn join_text_children(tag: String, children: List(Element)) -> List(Element) {
 
 /// What React calls for a component: reads the element's render function
 /// from its props and converts what it returns, with hooks allowed.
+///
+/// `render.component_function` binds the first two arguments, this function
+/// itself and the render's table, which `booted` was made too early to hold.
 fn render_component(
-  js: render.Js,
+  booted: render.Js,
   ctx: Context(Dynamic),
   args: List(JsVal),
 ) -> Step(JsVal) {
-  let props = case args {
-    [props, ..] -> props
-    [] -> mk_undefined()
+  let #(component, table, props) = case args {
+    [component, table, props, ..] -> #(component, table, props)
+    _ -> #(mk_undefined(), mk_undefined(), mk_undefined())
   }
+  let js = render.Js(..booted, component:, table:, in_component: True)
   let #(render_fn, ctx) = render.get(ctx, props, "render")
   use render_fn, ctx <- then(unwrap_component(ctx, render_fn))
-  to_js(ctx, render.Js(..js, in_component: True), render_fn())
+  to_js(ctx, js, render_fn())
 }
 
 fn unwrap_component(
@@ -522,19 +548,14 @@ fn children_to_js(
 fn props_to_js(
   ctx: Context(Dynamic),
   attributes: List(Attribute),
-) -> #(JsVal, Context(Dynamic)) {
-  case attributes {
-    [] -> #(mk_null(), ctx)
-    _ -> {
-      let #(props, ctx) =
-        list.fold(attributes, #([], ctx), fn(acc, attribute) {
-          let #(props, ctx) = acc
-          let #(prop, ctx) = prop_to_js(ctx, attribute)
-          #([prop, ..props], ctx)
-        })
-      host.object(ctx, list.reverse(props))
-    }
-  }
+) -> #(List(#(String, JsVal)), Context(Dynamic)) {
+  let #(props, ctx) =
+    list.fold(attributes, #([], ctx), fn(acc, attribute) {
+      let #(props, ctx) = acc
+      let #(prop, ctx) = prop_to_js(ctx, attribute)
+      #([prop, ..props], ctx)
+    })
+  #(list.reverse(props), ctx)
 }
 
 fn prop_to_js(

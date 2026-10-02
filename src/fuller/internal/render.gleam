@@ -5,7 +5,7 @@
 import arc/bytecode/key
 import arc/host.{type Context}
 import arc/rt/obj as rt_obj
-import arc/rt/types.{type JsVal, KUndef, StringKey, mk_undefined}
+import arc/rt/types.{type JsVal, KUndef, StringKey, mk_string, mk_undefined}
 import gleam/dynamic.{type Dynamic}
 import gleam/option.{None, Some}
 
@@ -31,8 +31,14 @@ pub type React {
 }
 
 /// The JS values converting elements needs. Kept apart from the booted
-/// engine so the component functions that hold it stay small: Arc's garbage
+/// engine so the host function that holds it stays small: Arc's garbage
 /// collector walks everything a host function holds.
+///
+/// Arc never frees a host function, so fuller makes its two once, at boot:
+/// `component` is what React ends up calling for every component, and
+/// `first_argument` returns its first argument. Whatever a render needs from
+/// them it gets with `bind`, `Function.prototype.bind`, which makes an
+/// ordinary JS function.
 ///
 /// `table` is a plain JS object made fresh for each render, holding the
 /// component functions and context objects made so far, so the same name
@@ -40,9 +46,12 @@ pub type React {
 /// component right now, which is the only time hooks may run.
 pub type Js {
   Js(
-    create_element: JsVal,
+    jsx: JsVal,
     fragment: JsVal,
     react: React,
+    bind: JsVal,
+    component: JsVal,
+    first_argument: JsVal,
     table: JsVal,
     in_component: Bool,
   )
@@ -123,15 +132,29 @@ fn cached(
 /// The JS function React calls for components named `name`. One function
 /// per name, like a React component type; each element passes its own
 /// render function in its props.
+///
+/// It is `js.component` bound to itself and this render's table, which that
+/// function gets ahead of the props React passes. React reads the name off
+/// `displayName`.
 pub fn component_function(
   ctx: Context(Dynamic),
   js: Js,
   name: String,
-  impl: host.HostFn(Dynamic),
 ) -> #(Result(JsVal, JsVal), Context(Dynamic)) {
   use ctx <- cached(ctx, js, "component " <> name)
-  let #(function, ctx) = host.function(ctx, name, 1, impl)
-  #(Ok(function), ctx)
+  case
+    host.call(ctx, js.bind, js.component, [
+      mk_undefined(),
+      js.component,
+      js.table,
+    ])
+  {
+    #(Ok(function), ctx) -> #(
+      Ok(function),
+      set(ctx, function, "displayName", mk_string(name)),
+    )
+    failed -> failed
+  }
 }
 
 /// The React context object for the fuller context `name`, with `default`
@@ -149,19 +172,11 @@ pub fn context_object(
 
 /// A JS function that returns `value`, for hooks that take a function React
 /// calls straight away (`useMemo`, `useSyncExternalStore`). fuller computes
-/// the value itself first; one function per render serves every such call,
-/// so no hook allocates a function of its own.
+/// the value itself first.
 pub fn returning(
   ctx: Context(Dynamic),
   js: Js,
   value: JsVal,
 ) -> #(Result(JsVal, JsVal), Context(Dynamic)) {
-  let ctx = set(ctx, js.table, "pending value", value)
-  use ctx <- cached(ctx, js, "pending value function")
-  let #(function, ctx) =
-    host.function(ctx, "fuller", 0, fn(ctx, _args, _this) {
-      let #(value, ctx) = get(ctx, js.table, "pending value")
-      #(Ok(value), ctx)
-    })
-  #(Ok(function), ctx)
+  host.call(ctx, js.bind, js.first_argument, [mk_undefined(), value])
 }
