@@ -116,36 +116,55 @@ pub fn new() -> Renderer {
         get(st, react, "useSyncExternalStore")
       let #(create_context, st) = get(st, react, "createContext")
       let #(suspense, st) = get(st, react, "Suspense")
+      let #(bind, st) = get(st, create_element, "bind")
+      let #(first_argument, ctx) =
+        host.function(
+          Context(..ctx, agent: st),
+          "fuller",
+          1,
+          fn(ctx, args, _this) {
+            #(Ok(list.first(args) |> result.unwrap(mk_undefined())), ctx)
+          },
+        )
+      let js =
+        render.Js(
+          create_element:,
+          fragment:,
+          react: render.React(
+            use_id:,
+            use_context:,
+            use_state:,
+            use_memo:,
+            use_callback:,
+            use_ref:,
+            use_deferred_value:,
+            use_transition:,
+            use_optimistic:,
+            use_effect:,
+            use_layout_effect:,
+            use_insertion_effect:,
+            use_sync_external_store:,
+            create_context:,
+            suspense:,
+          ),
+          bind:,
+          component: mk_undefined(),
+          first_argument:,
+          table: mk_undefined(),
+          in_component: False,
+        )
+      let #(component, ctx) =
+        host.function(ctx, "fuller", 1, fn(ctx, args, _this) {
+          render_component(js, ctx, args)
+        })
       #(
         Renderer(
           engine: engine,
-          js: render.Js(
-            create_element:,
-            fragment:,
-            react: render.React(
-              use_id:,
-              use_context:,
-              use_state:,
-              use_memo:,
-              use_callback:,
-              use_ref:,
-              use_deferred_value:,
-              use_transition:,
-              use_optimistic:,
-              use_effect:,
-              use_layout_effect:,
-              use_insertion_effect:,
-              use_sync_external_store:,
-              create_context:,
-              suspense:,
-            ),
-            table: mk_undefined(),
-            in_component: False,
-          ),
+          js: render.Js(..js, component:),
           render_to_string:,
           render_to_static_markup:,
         ),
-        Context(..ctx, agent: st),
+        ctx,
       )
     })
   Renderer(..exports, engine:)
@@ -275,11 +294,7 @@ fn to_js(
       ])
     }
     Component(name, render_fn) -> {
-      use function, ctx <- then(
-        render.component_function(ctx, js, name, fn(ctx, args, _this) {
-          render_component(js, ctx, args)
-        }),
-      )
+      use function, ctx <- then(render.component_function(ctx, js, name))
       let #(render_fn, ctx) = render.wrap(ctx, render_fn)
       let #(props, ctx) = host.object(ctx, [#("render", render_fn)])
       host.call(ctx, js.create_element, mk_undefined(), [function, props])
@@ -346,18 +361,22 @@ fn join_text_children(tag: String, children: List(Element)) -> List(Element) {
 
 /// What React calls for a component: reads the element's render function
 /// from its props and converts what it returns, with hooks allowed.
+///
+/// `render.component_function` binds the first two arguments, this function
+/// itself and the render's table, which `booted` was made too early to hold.
 fn render_component(
-  js: render.Js,
+  booted: render.Js,
   ctx: Context(Dynamic),
   args: List(JsVal),
 ) -> Step(JsVal) {
-  let props = case args {
-    [props, ..] -> props
-    [] -> mk_undefined()
+  let #(component, table, props) = case args {
+    [component, table, props, ..] -> #(component, table, props)
+    _ -> #(mk_undefined(), mk_undefined(), mk_undefined())
   }
+  let js = render.Js(..booted, component:, table:, in_component: True)
   let #(render_fn, ctx) = render.get(ctx, props, "render")
   use render_fn, ctx <- then(unwrap_component(ctx, render_fn))
-  to_js(ctx, render.Js(..js, in_component: True), render_fn())
+  to_js(ctx, js, render_fn())
 }
 
 fn unwrap_component(
