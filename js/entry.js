@@ -1,4 +1,5 @@
 export * as React from "react";
+export { jsx } from "react/jsx-runtime";
 export {
   renderToString,
   renderToStaticMarkup,

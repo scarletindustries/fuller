@@ -95,7 +95,7 @@ pub fn new() -> Renderer {
           }
       }
       let #(react, st) = get(st, exports, "React")
-      let #(create_element, st) = get(st, react, "createElement")
+      let #(jsx, st) = get(st, exports, "jsx")
       let #(fragment, st) = get(st, react, "Fragment")
       let #(render_to_string, st) = get(st, exports, "renderToString")
       let #(render_to_static_markup, st) =
@@ -116,7 +116,7 @@ pub fn new() -> Renderer {
         get(st, react, "useSyncExternalStore")
       let #(create_context, st) = get(st, react, "createContext")
       let #(suspense, st) = get(st, react, "Suspense")
-      let #(bind, st) = get(st, create_element, "bind")
+      let #(bind, st) = get(st, jsx, "bind")
       let #(first_argument, ctx) =
         host.function(
           Context(..ctx, agent: st),
@@ -128,7 +128,7 @@ pub fn new() -> Renderer {
         )
       let js =
         render.Js(
-          create_element:,
+          jsx:,
           fragment:,
           react: render.React(
             use_id:,
@@ -287,34 +287,23 @@ fn to_js(
     None -> #(Ok(mk_null()), ctx)
     Fragment(children) -> {
       use kids, ctx <- then(children_to_js(ctx, js, children))
-      host.call(ctx, js.create_element, mk_undefined(), [
-        js.fragment,
-        mk_null(),
-        ..kids
-      ])
+      jsx(ctx, js, js.fragment, [], kids)
     }
     Component(name, render_fn) -> {
       use function, ctx <- then(render.component_function(ctx, js, name))
       let #(render_fn, ctx) = render.wrap(ctx, render_fn)
-      let #(props, ctx) = host.object(ctx, [#("render", render_fn)])
-      host.call(ctx, js.create_element, mk_undefined(), [function, props])
+      jsx(ctx, js, function, [#("render", render_fn)], [])
     }
     Provider(context, default, value, children) -> {
       use object, ctx <- then(render.context_object(ctx, js, context, default))
       let #(value, ctx) = render.wrap(ctx, value)
-      let #(props, ctx) = host.object(ctx, [#("value", value)])
       use kids, ctx <- then(children_to_js(ctx, js, children))
-      host.call(ctx, js.create_element, mk_undefined(), [object, props, ..kids])
+      jsx(ctx, js, object, [#("value", value)], kids)
     }
     Suspense(fallback, children) -> {
       use fallback, ctx <- then(to_js(ctx, js, fallback))
-      let #(props, ctx) = host.object(ctx, [#("fallback", fallback)])
       use kids, ctx <- then(children_to_js(ctx, js, children))
-      host.call(ctx, js.create_element, mk_undefined(), [
-        js.react.suspense,
-        props,
-        ..kids
-      ])
+      jsx(ctx, js, js.react.suspense, [#("fallback", fallback)], kids)
     }
     Hook(hook, next) ->
       case js.in_component {
@@ -332,13 +321,31 @@ fn to_js(
       let #(props, ctx) = props_to_js(ctx, attributes)
       let children = join_text_children(tag, children)
       use kids, ctx <- then(children_to_js(ctx, js, children))
-      host.call(ctx, js.create_element, mk_undefined(), [
-        mk_string(tag),
-        props,
-        ..kids
-      ])
+      jsx(ctx, js, mk_string(tag), props, kids)
     }
   }
+}
+
+/// Makes a React element with `jsx` from `react/jsx-runtime`, the function
+/// JSX compiles to. The children go in the props: one on its own, several as
+/// an array.
+fn jsx(
+  ctx: Context(Dynamic),
+  js: render.Js,
+  type_: JsVal,
+  props: List(#(String, JsVal)),
+  kids: List(JsVal),
+) -> Step(JsVal) {
+  let #(props, ctx) = case kids {
+    [] -> #(props, ctx)
+    [only] -> #(list.append(props, [#("children", only)]), ctx)
+    _ -> {
+      let #(kids, ctx) = host.array(ctx, kids)
+      #(list.append(props, [#("children", kids)]), ctx)
+    }
+  }
+  let #(props, ctx) = host.object(ctx, props)
+  host.call(ctx, js.jsx, mk_undefined(), [type_, props])
 }
 
 /// React renders `<title>`, `<style>` and `<script>` empty when they get
@@ -541,19 +548,14 @@ fn children_to_js(
 fn props_to_js(
   ctx: Context(Dynamic),
   attributes: List(Attribute),
-) -> #(JsVal, Context(Dynamic)) {
-  case attributes {
-    [] -> #(mk_null(), ctx)
-    _ -> {
-      let #(props, ctx) =
-        list.fold(attributes, #([], ctx), fn(acc, attribute) {
-          let #(props, ctx) = acc
-          let #(prop, ctx) = prop_to_js(ctx, attribute)
-          #([prop, ..props], ctx)
-        })
-      host.object(ctx, list.reverse(props))
-    }
-  }
+) -> #(List(#(String, JsVal)), Context(Dynamic)) {
+  let #(props, ctx) =
+    list.fold(attributes, #([], ctx), fn(acc, attribute) {
+      let #(props, ctx) = acc
+      let #(prop, ctx) = prop_to_js(ctx, attribute)
+      #([prop, ..props], ctx)
+    })
+  #(list.reverse(props), ctx)
 }
 
 fn prop_to_js(

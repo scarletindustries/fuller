@@ -46,7 +46,7 @@ pub type React {
 /// component right now, which is the only time hooks may run.
 pub type Js {
   Js(
-    create_element: JsVal,
+    jsx: JsVal,
     fragment: JsVal,
     react: React,
     bind: JsVal,
